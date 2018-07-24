@@ -15,7 +15,7 @@ import math
 import maya.cmds as cmds
 
 kPluginNodeName = "generalIk"
-kPluginNodeId = om.MTypeId( 0xDAE1 ) # find way to replace with eyyyy
+kPluginNodeId = om.MTypeId( 0xDAE1 )
 
 
 class generalIk(om.MPxNode):
@@ -30,8 +30,6 @@ class generalIk(om.MPxNode):
         #only compute if output is in out array
         if(pPlug.parent() == generalIk.aOutRot):
             # descend into coordinated cycles
-            #print "eyyyy"
-
             # inputs
             solverDH = pData.inputValue(generalIk.aSolver)
             solver = solverDH.asInt()
@@ -92,8 +90,10 @@ class generalIk(om.MPxNode):
 
                 chainMat = childMat.__mul__(parentMat.inverse())
                 chainArray.append(chainMat)
+                #chainArray is every joint in the space of its parent
                 #chainArray[i] = jntMat[i] x jntMat[i-1].inverse
                 jntArray.append(childMat)
+                #childArray is just the joint matrices
 
                 childWeightDH = om.MDataHandle(childCompDH.child(generalIk.aJntWeight))
                 childWeight = childWeightDH.asFloat()
@@ -110,7 +110,6 @@ class generalIk(om.MPxNode):
                 print "ITERATION {}".format(iter)
                 print ""
 
-
                 for i in range(inLength):
 
                     print "computing joint {} of {}".format(i, inLength)
@@ -118,7 +117,21 @@ class generalIk(om.MPxNode):
                     # welcome to the bone zone
 
                     # reconstruct hierarchy with matrices from previous iteration
+                    # currently target is known in rootspace, and end isn't known at all
                     # backwards to get target and forwards to get end, both in active joint space
+                    #
+                    #                  +(target)
+                    #               .  
+                    #             .
+                    #           O 
+                    #         /   \       X(end)
+                    #       /       \   /
+                    #     /           O
+                    #   /
+                    #(root)      
+                    # this works by getting vector from active joint to end, from active joint to target,
+                    # then aligning one to the other. joints are assumed to have direct parent-child
+                    # hierarchy, so all rotations are inherited rigidly
 
                     # ccd operates from tip to root - see reference for actual algorithm
                     jntMat = om.MMatrix()
@@ -163,7 +176,7 @@ class generalIk(om.MPxNode):
                         print "targetJStrans at {} is {}".format(i, targetJStrans)
 
                         # we don't just want to aim each joint, we want to
-                        # aim the end, by rotating each joint
+                        # aim the end, by rotating each joint in turn
 
                         # first get the aim matrix from joint to end
                         endAimMat = om.MMatrix()
@@ -200,12 +213,13 @@ class generalIk(om.MPxNode):
                 iter = iter + 1
 
                 #end of all iterations, computation has completed
-
+            
+            #convert jntArray of matrices to useful rotation values
             outArrayDH = pData.outputArrayValue(generalIk.aOutArray)
 
             targetRSTransA = om.MTransformationMatrix(targetRSmat).translation(4)
             print "target in RS world is {}".format(targetRSTransA)
-
+            
             for i in range(0, inLength):
                 outArrayDH.jumpToPhysicalElement(i)
                 outCompDH = outArrayDH.outputValue()
@@ -263,13 +277,7 @@ def lookAt(base, target, up = [0, 1, 0]):
     aim.__setitem__(15, 1)
 
     return aim
-
-
-    # almost makes you miss MScriptUtil
-
-
-
-
+    #if there's a way to make a MMatrix from a list i'd really love to hear about it
 
 
 def nodeInitializer():
@@ -340,6 +348,7 @@ def nodeInitializer():
     # targetWeightAttrFn.setMin(0)
     # targetWeightAttrFn.setMax(1)
     # om.MPxNode.addAttribute(generalIk.aTargetWeight)
+    # not doing multiple targets anymore
 
     endMatAttrFn = om.MFnMatrixAttribute()
     generalIk.aEndMat = endMatAttrFn.create("endMatrix", "endMat", 1)
@@ -543,14 +552,20 @@ def nodeInitializer():
     generalIk.attributeAffects(generalIk.aRootMat, generalIk.aOutArray)
     generalIk.attributeAffects(generalIk.aEndMat, generalIk.aOutArray)
     generalIk.attributeAffects(generalIk.aJnts, generalIk.aOutArray)
-
-
-
-
-
-
-
-
+    
+#     # TRY THIS OUT LATER:
+#     refMatArrayFn = om.MFnMatrixAttribute()
+#     generalIk.aRefArray = refMatArrayFn.create("refMatArray")
+#     refMatArrayFn.array = True
+#     refMatArrayFn.internal = True
+#     refMatArrayFn.cached = True
+#     refMatArrayFn.storable = True
+#     # do we need arrayDataBuilder?
+#     om.MPxNode.addAttribute(generalIk.aRefArray)
+# this would be constructed of the joints' relative matrices, and then store the outputs
+# of the node across iterations - basically its memory
+# if the reference skeleton changes RELATIVE TO THE ROOT, this would need to be recalculated
+# a battle for another day
 
 def nodeCreator():
         # creates node, returns to maya as pointer
